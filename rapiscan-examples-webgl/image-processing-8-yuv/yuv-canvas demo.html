@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!-- saved from url=(0044)https://brion.github.io/yuv-canvas/demo.html -->
+<html><script>(function main() {
+    // Create enabled event
+    function fireEnabledEvent() {
+        // If gli exists, then we are already present and shouldn't do anything
+        if (!window.gli) {
+            setTimeout(function () {
+                var enabledEvent = document.createEvent("Event");
+                enabledEvent.initEvent("WebGLEnabledEvent", true, true);
+                document.dispatchEvent(enabledEvent);
+            }, 0);
+        } else {
+            //console.log("WebGL Inspector already embedded on the page - disabling extension");
+        }
+    };
+
+    // Grab the path root from the extension
+    document.addEventListener("WebGLInspectorReadyEvent", function (e) {
+        var pathElement = document.getElementById("__webglpathroot");
+        if (window["gliloader"]) {
+            gliloader.pathRoot = pathElement.innerText;
+        } else {
+            // TODO: more?
+            window.gliCssUrl = pathElement.innerText + "gli.all.css";
+        }
+    }, false);
+
+    // Rewrite getContext to snoop for webgl
+    var originalGetContext = HTMLCanvasElement.prototype.getContext;
+    if (!HTMLCanvasElement.prototype.getContextRaw) {
+        HTMLCanvasElement.prototype.getContextRaw = originalGetContext;
+    }
+    HTMLCanvasElement.prototype.getContext = function () {
+        var ignoreCanvas = this.internalInspectorSurface;
+        if (ignoreCanvas) {
+            return originalGetContext.apply(this, arguments);
+        }
+
+        var result = originalGetContext.apply(this, arguments);
+        if (result == null) {
+            return null;
+        }
+
+        var contextNames = ["moz-webgl", "webkit-3d", "experimental-webgl", "webgl", "3d"];
+        var requestingWebGL = contextNames.indexOf(arguments[0]) != -1;
+        if (requestingWebGL) {
+            // Page is requesting a WebGL context!
+            fireEnabledEvent(this);
+
+            // If we are injected, inspect this context
+            if (window.gli) {
+                if (gli.host.inspectContext) {
+                    // TODO: pull options from extension
+                    result = gli.host.inspectContext(this, result);
+                    // NOTE: execute in a timeout so that if the dom is not yet
+                    // loaded this won't error out.
+                    window.setTimeout(function() {
+                        var hostUI = new gli.host.HostUI(result);
+                        result.hostUI = hostUI; // just so we can access it later for debugging
+                    }, 0);
+                }
+            }
+        }
+
+        return result;
+    };
+})();</script><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <title>yuv-canvas demo</title>
+</head>
+<body>
+  <h1><a href="https://github.com/brion/yuv-canvas">yuv-canvas</a> demo</h1>
+  
+  <p>This canvas is drawn from the three planar images below:</p>
+
+  <canvas width="640" height="480"></canvas>
+
+  <p>Try moving the sliders to apply a multiplier to each plane separately.</p>
+
+  <table>
+    <tbody><tr>
+      <th>Y (luma)</th>
+      <th>U (chroma)</th>
+      <th>V (chroma)</th>
+    </tr>
+    <tr>
+      <th><input id="yfader" type="range" min="0" max="2" value="1" step="0.1">
+      </th><th><input id="ufader" type="range" min="0" max="2" value="1" step="0.1">
+      </th><th><input id="vfader" type="range" min="0" max="2" value="1" step="0.1">
+    </th></tr>
+    <tr>
+      <td><img id="yplane" src="./yuv-canvas demo_files/cat-y.jpg" width="320"></td>
+      <td><img id="uplane" src="./yuv-canvas demo_files/cat-u.jpg" width="160"></td>
+      <td><img id="vplane" src="./yuv-canvas demo_files/cat-v.jpg" width="160"></td>
+    </tr>
+  </tbody></table>
+
+  <p>See <a href="https://github.com/brion/yuv-canvas/blob/master/demo/demo.js#L1">source code of this demo</a>.</p>
+
+  <script src="./yuv-canvas demo_files/demo-bundled.js.download"></script>
+
+</body></html>

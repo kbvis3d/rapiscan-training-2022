@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html>
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<link type="text/css" href="./hello-image_files/webgl-tutorials.css" rel="stylesheet">
+<script type="text/javascript" src="./hello-image_files/webgl-utils.js"></script>
+<script>
+window.onload = main;
+
+var canvas;
+var gl;
+var image;
+var texCoords = new Float32Array([
+                                  0.0,  0.0,
+                                  1.0,  0.0,
+                                  0.0,  1.0,
+                                  0.0,  1.0,
+                                  1.0,  0.0,
+                                  1.0,  1.0]);
+                                  
+function main() {
+	// Get A WebGL context
+	canvas = document.getElementById("canvas"); 
+	canvas.onmousedown = handleMouseDown;
+	document.onmouseup = handleMouseUp;
+	document.onmousemove = handleMouseMove;
+	
+	gl = getWebGLContext(canvas);
+	if (!gl) {
+	  return;
+	}
+	
+	image = new Image();
+	image.src = "leaves.jpg";  // MUST BE SAME DOMAIN!!!
+	image.onload = function() {
+    render(image);
+  }
+}
+
+function render(image, um, vm) {
+  // setup GLSL program
+  vertexShader = createShaderFromScriptElement(gl, "2d-vertex-shader");
+  fragmentShader = createShaderFromScriptElement(gl, "2d-fragment-shader");
+  program = createProgram(gl, [vertexShader, fragmentShader]);
+  gl.useProgram(program);
+
+  // look up where the vertex data needs to go.
+  var positionLocation = gl.getAttribLocation(program, "a_position");
+  var texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+  var mousePosLocation = gl.getUniformLocation(program, "u_mousePos");
+  gl.uniform2f(mousePosLocation, um, vm);
+  var lensDimensionsLocation = gl.getUniformLocation(program, "u_lensDimensions");
+  gl.uniform2f(lensDimensionsLocation, 0.2, 0.2);
+  var lensScaleLocation = gl.getUniformLocation(program, "u_lensScale");
+  gl.uniform1f(lensScaleLocation, 0.5);
+  
+
+  // provide texture coordinates for the rectangle.
+  var texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(texCoordLocation);
+  gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+  // Create a texture.
+  var texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+
+  // Set the parameters so we can render any size image.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  // Upload the image into the texture.
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+  // Create a buffer for the position of the rectangle corners.
+  var buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(positionLocation);
+  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+  // create the image rectangle (2 triangles)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1.0, -1.0,
+                                                   1.0, -1.0,
+                                                   -1.0, 1.0,
+                                                   -1.0, 1.0,
+                                                   1.0, -1.0,
+                                                   1.0, 1.0]), gl.STATIC_DRAW);
+
+  // Draw the rectangle.
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+var mouseDown = false;
+var lastMouseX = null;
+var lastMouseY = null;
+var lastMouseDownX = null;
+var lastMouseDownY = null;
+
+function handleMouseDown(event) {
+    mouseDown = true;
+    var rect = canvas.getBoundingClientRect();
+    lastMouseX = lastMouseDownX = event.clientX - rect.left;
+    lastMouseY = lastMouseDownY = event.clientY - rect.top;
+}
+
+
+function handleMouseUp(event) {
+    mouseDown = false;
+    render(image, -1, -1);
+}
+
+
+function handleMouseMove(event) {
+	if(mouseDown)
+	{	    
+	    var tx = lastMouseX / canvas.width;
+	    var ty = lastMouseY / canvas.height;
+	    // get texture coordinate of mouse-down point 
+	    var um = tx * texCoords[2] + (1.0 - tx)*texCoords[0]; 
+	    var vm = ty * texCoords[5] + (1.0 - ty)*texCoords[1];
+	    render(image, um, vm);
+	}
+	var rect = canvas.getBoundingClientRect();
+    lastMouseX = event.clientX - rect.left;
+    lastMouseY = event.clientY - rect.top;    
+}
+
+</script>
+<!-- vertex shader -->
+<script id="2d-vertex-shader" type="x-shader/x-vertex">
+attribute vec2 a_position;
+attribute vec2 a_texCoord;
+
+varying vec2 v_texCoord;
+
+void main() {
+   gl_Position = vec4(a_position * vec2(1, -1), 0, 1);
+
+   // pass the texCoord to the fragment shader
+   // The GPU will interpolate this value between points.
+   v_texCoord = a_texCoord;
+}
+</script>
+
+<!-- fragment shader -->
+<script id="2d-fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+
+// our texture
+uniform sampler2D u_image;
+// user mouse-pos in texture space
+uniform vec2 u_mousePos;
+uniform vec2 u_lensDimensions;
+uniform float u_lensScale;
+
+// the texCoords passed in from the vertex shader.
+varying vec2 v_texCoord;
+
+void main() {
+	vec2 newTexCoord; 
+    vec2 offset = v_texCoord - u_mousePos;
+    float distance = length(offset);
+    if(
+		//u_mousePos.x > 0.0 && u_mousePos.y > 0.0 &&
+		//v_texCoord.x < u_mousePos.x + u_lensDimensions.x/2.0 &&
+		//v_texCoord.x > u_mousePos.x - u_lensDimensions.x/2.0 &&
+		//v_texCoord.y < u_mousePos.y + u_lensDimensions.y/2.0 &&  
+		//v_texCoord.y > u_mousePos.y - u_lensDimensions.y/2.0
+        distance < 0.25 // magic-lens radius
+    )
+	{
+		// apply zoom factor
+		newTexCoord.x = u_mousePos.x + u_lensScale * (v_texCoord.x - u_mousePos.x);
+		newTexCoord.y = u_mousePos.y + u_lensScale * (v_texCoord.y - u_mousePos.y);
+	}
+	else
+	{
+		newTexCoord.x = v_texCoord.x;  
+		newTexCoord.y = v_texCoord.y;
+	}
+
+    gl_FragColor = texture2D(u_image, newTexCoord);
+}
+</script>
+</head>
+
+<body>
+<h1>WebGL - Magic Lens</h1><canvas id="canvas" width="500" height="500"></canvas>
+</body></html>
