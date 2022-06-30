@@ -1,0 +1,207 @@
+﻿<!DOCTYPE html>
+<html>
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<link type="text/css" href="./hello-image_files/webgl-tutorials.css" rel="stylesheet">
+<script type="text/javascript" src="./hello-image_files/webgl-utils.js"></script>
+<script>
+window.onload = Init;
+
+var canvas;
+var gl;
+var image;
+var texture;
+var newColumn;
+var aspectRatioLocation;
+var frameLocation;
+var textureSizeLocation;
+var columnCountLocation;
+
+var texLoaded = false;
+var frame = 0;
+var columnsToUpdate = 16;
+
+function handleLoadedTexture() {
+    // Create a texture.
+    texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // Set the parameters so we can render any size image.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    // Upload the image into the texture.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+    newColumn = [];
+    for (var i = 0; i < columnsToUpdate * image.height * 4; i++) {
+        newColumn.push(0);
+    }
+
+    texLoaded = true;
+}
+
+var lastTime = 0;
+
+function animate() {
+    var timeNow = new Date().getTime();
+    if (lastTime != 0) {
+        updateTexture();
+        render();
+    }
+    lastTime = timeNow;
+}
+
+function tick() {
+    requestAnimFrame(tick);
+    if (texLoaded) {
+        animate();
+    }
+}
+
+function updateTexture()
+{
+    // we want to replace a bit of the texture from the right hand side
+    var column = image.width - (frame * columnsToUpdate) % image.width - columnsToUpdate;
+
+    // generate intensities for a grayscale ramp
+    var intensity = (frame * columnsToUpdate * 0.05) % 256;
+    for (var i = 0; i < image.height * columnsToUpdate; i++) {
+        newColumn[i * 4 + 0] = intensity;
+        newColumn[i * 4 + 1] = intensity;
+        newColumn[i * 4 + 2] = intensity;
+        newColumn[i * 4 + 3] = 255;
+    }
+
+    ++frame;
+
+    var buffer = new Uint8Array(newColumn);
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, column, 0, columnsToUpdate, image.height,
+        gl.RGBA, gl.UNSIGNED_BYTE, buffer);
+}
+
+function Init() {
+  image = new Image();
+  image.src = "leaves.jpg";  // MUST BE SAME DOMAIN!!!
+  image.onload = function() {
+      handleLoadedTexture();
+  }
+
+  canvas = document.getElementById("canvas");
+  gl = canvas.getContext("webgl2");
+
+  gl.viewportWidth = canvas.width;
+  gl.viewportHeight = canvas.height;
+  gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.disable(gl.DEPTH_TEST);
+
+    // setup GLSL program
+  vertexShader = createShaderFromScriptElement(gl, "2d-vertex-shader");
+  fragmentShader = createShaderFromScriptElement(gl, "2d-fragment-shader");
+  program = createProgram(gl, [vertexShader, fragmentShader]);
+  gl.useProgram(program);
+
+    // look up where the vertex data needs to go.
+  var positionLocation = gl.getAttribLocation(program, "a_position");
+  var texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+  textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
+  aspectRatioLocation = gl.getUniformLocation(program, "aspectRatio");
+  frameLocation = gl.getUniformLocation(program, "u_frame");
+  columnCountLocation = gl.getUniformLocation(program, "u_columnCount");
+
+    // provide texture coordinates for the rectangle.
+  var texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      0.0, 0.0,
+      1.0, 0.0,
+      0.0, 1.0,
+      0.0, 1.0,
+      1.0, 0.0,
+      1.0, 1.0]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(texCoordLocation);
+  gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // Create a buffer for the position of the rectangle corners.
+  var buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(positionLocation);
+  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    // create the image rectangle (2 triangles)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1.0, -1.0,
+                                                   1.0, -1.0,
+                                                   -1.0, 1.0,
+                                                   -1.0, 1.0,
+                                                   1.0, -1.0,
+                                                   1.0, 1.0]), gl.STATIC_DRAW);
+
+
+  tick();
+}
+
+function render() {  
+  gl.uniform2f(textureSizeLocation, image.width, image.height);
+  gl.uniform1f(aspectRatioLocation, (image.width / image.height) * (canvas.height / canvas.width));
+  gl.uniform1f(frameLocation, frame);
+  gl.uniform1f(columnCountLocation, columnsToUpdate);
+
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+
+  // Draw the rectangle.
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+</script>
+<!-- vertex shader -->
+<script id="2d-vertex-shader" type="x-shader/x-vertex">#version 300 es // has to be on first line - do not add newline
+    uniform float aspectRatio;
+
+    in vec2 a_position;
+    in vec2 a_texCoord;
+
+    out vec2 v_texCoord;
+
+    void main() {
+        vec2 scaleFit = aspectRatio > 1.0 ? vec2(1, 1.0/aspectRatio) : vec2(aspectRatio, 1.0);
+        gl_Position = vec4(a_position * vec2(1, -1) * scaleFit, 0, 1);
+
+        // pass the texCoord to the fragment shader
+        // The GPU will interpolate this value between points.
+        v_texCoord = a_texCoord;
+    }
+</script>
+
+<!-- fragment shader -->
+<script id="2d-fragment-shader" type="x-shader/x-fragment">#version 300 es // has to be on first line - do not add newline
+    precision mediump float;
+
+    // our texture
+    uniform sampler2D u_image;
+    uniform sampler2D u_image2;
+    uniform vec2 u_textureSize;
+    uniform float u_frame;
+    uniform float u_columnCount;
+
+    // the texCoords passed in from the vertex shader.
+    in vec2 v_texCoord;
+
+    out vec4 fragColor;
+
+    void main() {
+        float pixelStep = u_columnCount / u_textureSize.x;
+        fragColor = texture(u_image, vec2(v_texCoord.x - u_frame*pixelStep, v_texCoord.y));
+    }
+</script>
+</head>
+
+<body>
+<h1>Streaming Texture</h1><canvas id="canvas" width="2048" height="1024"></canvas>
+</body></html>
