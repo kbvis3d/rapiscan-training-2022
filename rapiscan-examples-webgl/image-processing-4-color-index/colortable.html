@@ -1,0 +1,472 @@
+﻿<html>
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<script type="text/javascript" src="webgl-utils.js"></script>
+<script>
+window.onload = main;
+
+var vertexShaderSource = `#version 300 es
+in vec2 a_position;
+in vec2 a_texCoord;
+
+out vec2 v_texCoord;
+
+void main() {
+   // do the y-flip as opengl's origin is bottom-left
+   gl_Position = vec4(a_position * vec2(1, -1), 0, 1);
+
+   // pass the texCoord to the fragment shader
+   // The GPU will interpolate this value between points.
+   v_texCoord = a_texCoord;
+}
+`;
+
+var fragmentShaderSource = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_image;
+uniform sampler2D u_colourTableTexture;
+uniform int u_lutOffset;
+ 
+// the texCoords passed in from the vertex shader.
+in vec2 v_texCoord;
+
+out vec4 color;
+
+void main() {
+    // sample the source image (single-channel/grayscale/intensity/luminance)
+    vec4 imageColour = texture(u_image, v_texCoord);
+
+    // get index for looking up colour table
+    int index = int((imageColour.r)*255.0) + u_lutOffset;
+    index = min(255, max(0, index));
+    ivec2 tableTexCoord = ivec2(index, 0);
+
+    // sample (look-up) the colour table to get the final colour
+    color = texelFetch(u_colourTableTexture, tableTexCoord, 0);
+}
+`;
+
+var canvas;
+var gl;
+var image;
+var byteTable;
+
+function main() {
+    canvas = document.getElementById("canvas");
+    canvas.onmousedown = handleMouseDown;
+    document.onmouseup = handleMouseUp;
+    document.onmousemove = handleMouseMove;
+
+    var table = [
+        0.0104166666666667, 0, 0,
+        0.0208333333333333, 0, 0,
+        0.0312500000000000, 0, 0,
+        0.0416666666666667, 0, 0,
+        0.0520833333333333, 0, 0,
+        0.0625000000000000, 0, 0,
+        0.0729166666666667, 0, 0,
+        0.0833333333333333, 0, 0,
+        0.0937500000000000, 0, 0,
+        0.104166666666667, 0, 0,
+        0.114583333333333, 0, 0,
+        0.125000000000000, 0, 0,
+        0.135416666666667, 0, 0,
+        0.145833333333333, 0, 0,
+        0.156250000000000, 0, 0,
+        0.166666666666667, 0, 0,
+        0.177083333333333, 0, 0,
+        0.187500000000000, 0, 0,
+        0.197916666666667, 0, 0,
+        0.208333333333333, 0, 0,
+        0.218750000000000, 0, 0,
+        0.229166666666667, 0, 0,
+        0.239583333333333, 0, 0,
+        0.250000000000000, 0, 0,
+        0.260416666666667, 0, 0,
+        0.270833333333333, 0, 0,
+        0.281250000000000, 0, 0,
+        0.291666666666667, 0, 0,
+        0.302083333333333, 0, 0,
+        0.312500000000000, 0, 0,
+        0.322916666666667, 0, 0,
+        0.333333333333333, 0, 0,
+        0.343750000000000, 0, 0,
+        0.354166666666667, 0, 0,
+        0.364583333333333, 0, 0,
+        0.375000000000000, 0, 0,
+        0.385416666666667, 0, 0,
+        0.395833333333333, 0, 0,
+        0.406250000000000, 0, 0,
+        0.416666666666667, 0, 0,
+        0.427083333333333, 0, 0,
+        0.437500000000000, 0, 0,
+        0.447916666666667, 0, 0,
+        0.458333333333333, 0, 0,
+        0.468750000000000, 0, 0,
+        0.479166666666667, 0, 0,
+        0.489583333333333, 0, 0,
+        0.500000000000000, 0, 0,
+        0.510416666666667, 0, 0,
+        0.520833333333333, 0, 0,
+        0.531250000000000, 0, 0,
+        0.541666666666667, 0, 0,
+        0.552083333333333, 0, 0,
+        0.562500000000000, 0, 0,
+        0.572916666666667, 0, 0,
+        0.583333333333333, 0, 0,
+        0.593750000000000, 0, 0,
+        0.604166666666667, 0, 0,
+        0.614583333333333, 0, 0,
+        0.625000000000000, 0, 0,
+        0.635416666666667, 0, 0,
+        0.645833333333333, 0, 0,
+        0.656250000000000, 0, 0,
+        0.666666666666667, 0, 0,
+        0.677083333333333, 0, 0,
+        0.687500000000000, 0, 0,
+        0.697916666666667, 0, 0,
+        0.708333333333333, 0, 0,
+        0.718750000000000, 0, 0,
+        0.729166666666667, 0, 0,
+        0.739583333333333, 0, 0,
+        0.750000000000000, 0, 0,
+        0.760416666666667, 0, 0,
+        0.770833333333333, 0, 0,
+        0.781250000000000, 0, 0,
+        0.791666666666667, 0, 0,
+        0.802083333333333, 0, 0,
+        0.812500000000000, 0, 0,
+        0.822916666666667, 0, 0,
+        0.833333333333333, 0, 0,
+        0.843750000000000, 0, 0,
+        0.854166666666667, 0, 0,
+        0.864583333333333, 0, 0,
+        0.875000000000000, 0, 0,
+        0.885416666666667, 0, 0,
+        0.895833333333333, 0, 0,
+        0.906250000000000, 0, 0,
+        0.916666666666667, 0, 0,
+        0.927083333333333, 0, 0,
+        0.937500000000000, 0, 0,
+        0.947916666666667, 0, 0,
+        0.958333333333333, 0, 0,
+        0.968750000000000, 0, 0,
+        0.979166666666667, 0, 0,
+        0.989583333333333, 0, 0,
+        1, 0, 0,
+        1, 0.0104166666666667, 0,
+        1, 0.0208333333333333, 0,
+        1, 0.0312500000000000, 0,
+        1, 0.0416666666666667, 0,
+        1, 0.0520833333333333, 0,
+        1, 0.0625000000000000, 0,
+        1, 0.0729166666666667, 0,
+        1, 0.0833333333333333, 0,
+        1, 0.0937500000000000, 0,
+        1, 0.104166666666667, 0,
+        1, 0.114583333333333, 0,
+        1, 0.125000000000000, 0,
+        1, 0.135416666666667, 0,
+        1, 0.145833333333333, 0,
+        1, 0.156250000000000, 0,
+        1, 0.166666666666667, 0,
+        1, 0.177083333333333, 0,
+        1, 0.187500000000000, 0,
+        1, 0.197916666666667, 0,
+        1, 0.208333333333333, 0,
+        1, 0.218750000000000, 0,
+        1, 0.229166666666667, 0,
+        1, 0.239583333333333, 0,
+        1, 0.250000000000000, 0,
+        1, 0.260416666666667, 0,
+        1, 0.270833333333333, 0,
+        1, 0.281250000000000, 0,
+        1, 0.291666666666667, 0,
+        1, 0.302083333333333, 0,
+        1, 0.312500000000000, 0,
+        1, 0.322916666666667, 0,
+        1, 0.333333333333333, 0,
+        1, 0.343750000000000, 0,
+        1, 0.354166666666667, 0,
+        1, 0.364583333333333, 0,
+        1, 0.375000000000000, 0,
+        1, 0.385416666666667, 0,
+        1, 0.395833333333333, 0,
+        1, 0.406250000000000, 0,
+        1, 0.416666666666667, 0,
+        1, 0.427083333333333, 0,
+        1, 0.437500000000000, 0,
+        1, 0.447916666666667, 0,
+        1, 0.458333333333333, 0,
+        1, 0.468750000000000, 0,
+        1, 0.479166666666667, 0,
+        1, 0.489583333333333, 0,
+        1, 0.500000000000000, 0,
+        1, 0.510416666666667, 0,
+        1, 0.520833333333333, 0,
+        1, 0.531250000000000, 0,
+        1, 0.541666666666667, 0,
+        1, 0.552083333333333, 0,
+        1, 0.562500000000000, 0,
+        1, 0.572916666666667, 0,
+        1, 0.583333333333333, 0,
+        1, 0.593750000000000, 0,
+        1, 0.604166666666667, 0,
+        1, 0.614583333333333, 0,
+        1, 0.625000000000000, 0,
+        1, 0.635416666666667, 0,
+        1, 0.645833333333333, 0,
+        1, 0.656250000000000, 0,
+        1, 0.666666666666667, 0,
+        1, 0.677083333333333, 0,
+        1, 0.687500000000000, 0,
+        1, 0.697916666666667, 0,
+        1, 0.708333333333333, 0,
+        1, 0.718750000000000, 0,
+        1, 0.729166666666667, 0,
+        1, 0.739583333333333, 0,
+        1, 0.750000000000000, 0,
+        1, 0.760416666666667, 0,
+        1, 0.770833333333333, 0,
+        1, 0.781250000000000, 0,
+        1, 0.791666666666667, 0,
+        1, 0.802083333333333, 0,
+        1, 0.812500000000000, 0,
+        1, 0.822916666666667, 0,
+        1, 0.833333333333333, 0,
+        1, 0.843750000000000, 0,
+        1, 0.854166666666667, 0,
+        1, 0.864583333333333, 0,
+        1, 0.875000000000000, 0,
+        1, 0.885416666666667, 0,
+        1, 0.895833333333333, 0,
+        1, 0.906250000000000, 0,
+        1, 0.916666666666667, 0,
+        1, 0.927083333333333, 0,
+        1, 0.937500000000000, 0,
+        1, 0.947916666666667, 0,
+        1, 0.958333333333333, 0,
+        1, 0.968750000000000, 0,
+        1, 0.979166666666667, 0,
+        1, 0.989583333333333, 0,
+        1, 1, 0,
+        1, 1, 0.015625000000000,
+        1, 1, 0.031250000000000,
+        1, 1, 0.046875000000000,
+        1, 1, 0.062500000000000,
+        1, 1, 0.078125000000000,
+        1, 1, 0.0937500000000000,
+        1, 1, 0.109375000000000,
+        1, 1, 0.125000000000000,
+        1, 1, 0.140625000000000,
+        1, 1, 0.156250000000000,
+        1, 1, 0.171875000000000,
+        1, 1, 0.187500000000000,
+        1, 1, 0.203125000000000,
+        1, 1, 0.218750000000000,
+        1, 1, 0.234375000000000,
+        1, 1, 0.250000000000000,
+        1, 1, 0.265625000000000,
+        1, 1, 0.281250000000000,
+        1, 1, 0.296875000000000,
+        1, 1, 0.312500000000000,
+        1, 1, 0.328125000000000,
+        1, 1, 0.343750000000000,
+        1, 1, 0.359375000000000,
+        1, 1, 0.375000000000000,
+        1, 1, 0.390625000000000,
+        1, 1, 0.406250000000000,
+        1, 1, 0.421875000000000,
+        1, 1, 0.437500000000000,
+        1, 1, 0.453125000000000,
+        1, 1, 0.468750000000000,
+        1, 1, 0.484375000000000,
+        1, 1, 0.500000000000000,
+        1, 1, 0.515625000000000,
+        1, 1, 0.531250000000000,
+        1, 1, 0.546875000000000,
+        1, 1, 0.562500000000000,
+        1, 1, 0.578125000000000,
+        1, 1, 0.593750000000000,
+        1, 1, 0.609375000000000,
+        1, 1, 0.625000000000000,
+        1, 1, 0.640625000000000,
+        1, 1, 0.656250000000000,
+        1, 1, 0.671875000000000,
+        1, 1, 0.687500000000000,
+        1, 1, 0.703125000000000,
+        1, 1, 0.718750000000000,
+        1, 1, 0.734375000000000,
+        1, 1, 0.750000000000000,
+        1, 1, 0.765625000000000,
+        1, 1, 0.781250000000000,
+        1, 1, 0.796875000000000,
+        1, 1, 0.812500000000000,
+        1, 1, 0.828125000000000,
+        1, 1, 0.843750000000000,
+        1, 1, 0.859375000000000,
+        1, 1, 0.875000000000000,
+        1, 1, 0.890625000000000,
+        1, 1, 0.906250000000000,
+        1, 1, 0.921875000000000,
+        1, 1, 0.937500000000000,
+        1, 1, 0.953125000000000,
+        1, 1, 0.968750000000000,
+        1, 1, 0.984375000000000,
+        1, 1, 1
+    ];
+    byteTable = [];
+    for (var i = 0; i < 256 * 3; i++) {
+        byteTable.push(table[i] * 255.0);
+    }
+
+  image = new Image();
+  image.src = "leaves.jpg";  // MUST BE SAME DOMAIN!!!
+  image.onload = function() {
+    render();
+  }
+}
+
+function render() {
+    // Get A WebGL context
+    var canvas = document.getElementById("canvas");
+    var gl = canvas.getContext("webgl2");
+    if (!gl) {
+        return;
+    }
+
+  // setup GLSL program
+  var program = webglUtils.createProgramFromSources(gl,
+   [vertexShaderSource, fragmentShaderSource]);
+
+  gl.useProgram(program);
+
+  // look up where the vertex data needs to go.
+  var positionLocation = gl.getAttribLocation(program, "a_position");
+  var texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+
+  // provide texture coordinates for the rectangle.
+  var texCoordBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+  
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      0.0,  0.0,
+      1.0,  0.0,
+      0.0,  1.0,
+      0.0,  1.0,
+      1.0,  0.0,
+      1.0,  1.0]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(texCoordLocation);
+  gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+  // Create a texture.
+  var texture = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+
+  // Set the texturing parameters
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  // Upload the image into the texture.
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, gl.RED, gl.FLOAT, image);
+
+  // Create colour-table texture (1D texture for dependent reads)
+  var u_colourTableTexture = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, u_colourTableTexture);
+
+  // we do not want filtering when we lookup the colour table
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+   
+  // Upload the colour table into the 256x1 2D texture (1D might not be supported)
+  var dataTypedArray = new Uint8Array(byteTable);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 256, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, dataTypedArray);
+  gl.activeTexture(gl.TEXTURE0);
+
+  // Create a buffer for the position of the rectangle corners.
+  var buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(positionLocation);
+  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+  // create the image rectangle (2 triangles)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1.0, -1.0,
+                                                   1.0, -1.0,
+                                                   -1.0, 1.0,
+                                                   -1.0, 1.0,
+                                                   1.0, -1.0,
+                                                   1.0, 1.0]), gl.STATIC_DRAW);
+
+  var samplerUniform = gl.getUniformLocation(program, "u_image");
+  gl.uniform1i(samplerUniform, 0);
+  samplerUniform = gl.getUniformLocation(program, "u_colourTableTexture");
+  gl.uniform1i(samplerUniform, 1);
+  var samplerUniform = gl.getUniformLocation(program, "u_lutOffset");
+  gl.uniform1i(samplerUniform, lutOffset);
+
+  // Draw the rectangle.
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+var mouseDown = false;
+var lastMouseX = null;
+var lastMouseY = null;
+var lastMouseDownX = null;
+var lastMouseDownY = null;
+var firstClick = true;
+var lutOffset = 0;
+
+function handleMouseDown(event) {
+    mouseDown = true;
+    var rect = canvas.getBoundingClientRect();
+    lastMouseX = lastMouseDownX = event.clientX - rect.left;
+    lastMouseY = lastMouseDownY = event.clientY - rect.top;
+}
+
+
+function handleMouseUp(event) {
+    mouseDown = false;
+    render(image);
+    console.log("mouse up");
+}
+
+function handleMouseMove(event) {
+    if (!mouseDown) {
+        return;
+    }
+    var rect = canvas.getBoundingClientRect();
+    var newX = event.clientX - rect.left;
+    var deltaX = newX - lastMouseX;
+    var newY = event.clientY - rect.top;
+    var deltaY = newY - lastMouseY;
+
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        // horizontal drag changes the brightness (colour table is changed)
+        var scale = deltaX < 0 ? 0.99 : 1.01;
+        for (var i = 0; i < 256 * 3; i++) {
+            byteTable[i] = Math.min(255.0, scale * byteTable[i]);
+        }
+    }
+    else {
+        // vertical drag slides the table lookup (colour table is not changed)
+        lutOffset += deltaY > 0 ? 1 : -1;
+        lutOffset = Math.min(128, Math.max(-128, lutOffset));
+    }
+
+    lastMouseX = event.clientX - rect.left;
+    lastMouseY = event.clientY - rect.top;
+    console.log("mouse down");
+
+    render(image);
+}
+</script>
+</head>
+
+<body>
+<h1>Indexed Color with Look Up Table (LUT)</h1><canvas id="canvas" width="500" height="500"></canvas>
+</body></html>
