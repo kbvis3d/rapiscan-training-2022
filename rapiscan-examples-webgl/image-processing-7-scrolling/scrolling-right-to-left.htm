@@ -47,12 +47,12 @@ function handleLoadedTexture() {
 var lastTime = 0;
 
 function animate() {
-    var timeNow = new Date().getTime();
-    if (lastTime != 0) {
-        updateTexture();
-        render();
-    }
+  var timeNow = new Date().getTime();
+  if(lastTime === 0 || timeNow - lastTime > 100){
+    updateTexture();
+    render();
     lastTime = timeNow;
+  }
 }
 
 function tick() {
